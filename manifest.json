@@ -1,21 +1,31 @@
 {
   "manifest_version": 3,
-  "name": "ChatGPT Extractor",
-  "version": "1.2",
-  "description": "Extract ChatGPT messages with full formatting + code support",
+  "name": "Multi-LLM Extractor Pro",
+  "version": "3.0",
+  "description": "Extract chats + inputs from ChatGPT, Gemini, Claude, Grok (Shadow DOM supported)",
 
   "permissions": ["activeTab"],
 
   "host_permissions": [
     "https://chat.openai.com/*",
-    "https://chatgpt.com/*"
+    "https://chatgpt.com/*",
+    "https://gemini.google.com/*",
+    "https://claude.ai/*",
+    "https://www.claude.ai/*",
+    "https://x.ai/*",
+    "https://grok.x.ai/*"
   ],
 
   "content_scripts": [
     {
       "matches": [
         "https://chat.openai.com/*",
-        "https://chatgpt.com/*"
+        "https://chatgpt.com/*",
+        "https://gemini.google.com/*",
+        "https://claude.ai/*",
+        "https://www.claude.ai/*",
+        "https://x.ai/*",
+        "https://grok.x.ai/*"
       ],
       "js": ["content.js"],
       "run_at": "document_idle"

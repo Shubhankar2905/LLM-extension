@@ -1,11 +1,30 @@
-console.log("✅ Extension Loaded");
+console.log("🚀 Universal AI Tracker Loaded");
 
 /* ================================
-   🔥 Clean Text
+   🌐 PLATFORM DETECTION
+================================ */
+const isChatGPT =
+  location.hostname.includes("chatgpt.com") ||
+  location.hostname.includes("openai");
+
+const isClaude = location.hostname.includes("claude.ai");
+const isGemini = location.hostname.includes("gemini.google.com");
+
+const PLATFORM = isChatGPT
+  ? "ChatGPT"
+  : isClaude
+  ? "Claude"
+  : isGemini
+  ? "Gemini"
+  : "Unknown";
+
+console.log("🌐 Platform:", PLATFORM);
+
+/* ================================
+   🧹 CLEAN TEXT
 ================================ */
 function getCleanText(node) {
   const clone = node.cloneNode(true);
-
   clone.querySelectorAll("pre, code, svg, button").forEach(el => el.remove());
 
   let text = clone.innerText || "";
@@ -13,19 +32,23 @@ function getCleanText(node) {
   let lines = text
     .split("\n")
     .map(l => l.trim())
-    .filter(l => l.length > 1);
+    .filter(l => l.length > 0);
 
-  lines = [...new Set(lines)];
+  // 🔥 Gemini fix
+  if (isGemini) {
+    lines = lines.map(line => line.replace(/^you said:\s*/i, ""));
+    lines = lines.filter(line => !/^you said:?$/i.test(line));
+  }
 
-  return lines.join("\n");
+  return [...new Set(lines)].join("\n");
 }
 
 /* ================================
-   🔥 Extract Code
+   💻 CODE EXTRACTION
 ================================ */
 function extractCodeBlocks(node) {
   const codes = [];
-  node.querySelectorAll("pre").forEach((c) => {
+  node.querySelectorAll("pre").forEach(c => {
     const t = c.innerText.trim();
     if (t && !codes.includes(t)) codes.push(t);
   });
@@ -33,128 +56,272 @@ function extractCodeBlocks(node) {
 }
 
 /* ================================
-   🔥 Extract Messages
+   📦 EXTRACT MESSAGES
 ================================ */
 function extractMessages() {
-  const nodes = document.querySelectorAll("[data-message-author-role]");
-  let chats = [];
+  let combined = [];
 
-  nodes.forEach((node) => {
-    const role = node.getAttribute("data-message-author-role");
-
-    const text = getCleanText(node);
-    const code = extractCodeBlocks(node);
-
-    if (role && text) {
-      chats.push({ role, text, code });
-    }
-  });
-
-  return chats;
-}
-
-/* ================================
-   🎨 UI
-================================ */
-const container = document.createElement("div");
-
-Object.assign(container.style, {
-  position: "fixed",
-  bottom: "20px",
-  right: "20px",
-  width: "340px",
-  height: "620px",
-  background: "#111",
-  color: "#fff",
-  borderRadius: "12px",
-  zIndex: "999999",
-  padding: "10px",
-  overflowY: "auto",
-  fontSize: "12px"
-});
-
-container.innerHTML = "<b>🤖 ChatGPT Sync</b><hr/>";
-document.body.appendChild(container);
-
-/* ================================
-   🔁 UI Update
-================================ */
-function updateUI(messages) {
-  container.innerHTML = "<b>🤖 ChatGPT Sync</b><hr/>";
-
-  messages.forEach((msg) => {
-    const div = document.createElement("div");
-
-    div.style.marginBottom = "10px";
-    div.style.padding = "8px";
-    div.style.borderRadius = "8px";
-
-    div.style.background = msg.role === "user" ? "#2563eb" : "#333";
-    div.style.textAlign = msg.role === "user" ? "right" : "left";
-
-    const textDiv = document.createElement("div");
-    textDiv.innerText = msg.text;
-    div.appendChild(textDiv);
-
-    msg.code.forEach((c) => {
-      const codeDiv = document.createElement("pre");
-      codeDiv.innerText = c;
-      codeDiv.style.background = "#000";
-      codeDiv.style.marginTop = "6px";
-      codeDiv.style.padding = "6px";
-      codeDiv.style.borderRadius = "6px";
-      div.appendChild(codeDiv);
+  if (isChatGPT) {
+    const nodes = document.querySelectorAll("[data-message-author-role]");
+    nodes.forEach(node => {
+      const role = node.getAttribute("data-message-author-role");
+      if (!role) return;
+      combined.push({ node, role });
     });
+  }
 
-    container.appendChild(div);
+  if (isClaude) {
+    const userNodes = [...document.querySelectorAll('[data-testid="user-message"]')];
+    const aiNodes = [...document.querySelectorAll(".font-claude-response")];
+
+    combined.push(
+      ...userNodes.map(n => ({ node: n, role: "user" })),
+      ...aiNodes.map(n => ({ node: n, role: "assistant" }))
+    );
+  }
+
+  if (isGemini) {
+    const userNodes = [...document.querySelectorAll(".user-query-bubble-with-background")];
+    const aiNodes = [...document.querySelectorAll(".model-response-text")];
+
+    combined.push(
+      ...userNodes.map(n => ({ node: n, role: "user" })),
+      ...aiNodes.map(n => ({ node: n, role: "assistant" }))
+    );
+  }
+
+  combined.sort((a, b) => {
+    if (a.node === b.node) return 0;
+    return a.node.compareDocumentPosition(b.node) &
+      Node.DOCUMENT_POSITION_FOLLOWING
+      ? -1
+      : 1;
   });
 
-  container.scrollTop = container.scrollHeight;
+  return combined
+    .map(({ node, role }) => ({
+      role,
+      text: getCleanText(node),
+      code: extractCodeBlocks(node)
+    }))
+    .filter(m => m.text);
 }
 
 /* ================================
-   🔥 SMART OBSERVER (FIXED)
+   ⏳ GENERATION CHECK
 ================================ */
+function isGenerating() {
+  if (isChatGPT) {
+    return document.querySelector("[data-testid='stop-button']") !== null;
+  }
+  if (isClaude) {
+    return document.querySelector('[data-is-streaming="true"]') !== null;
+  }
+  if (isGemini) {
+    return document.querySelector(".model-response-text:empty") !== null;
+  }
+  return false;
+}
 
-let debounceTimer = null;
-let lastHash = "";
-
-/* 🔑 Generate hash to avoid duplicate renders */
+/* ================================
+   🔐 HASH
+================================ */
 function generateHash(messages) {
   return messages.map(m => m.text).join("||");
 }
 
-/* 🔑 Check if ChatGPT is still generating */
-function isGenerating() {
-  return document.querySelector("[data-testid='stop-button']") !== null;
+/* ================================
+   📡 SEND TO BACKEND
+================================ */
+async function sendToBackend(messages) {
+  try {
+    const response = await fetch("https://jsonplaceholder.typicode.com/posts", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        platform: PLATFORM,
+        timestamp: new Date().toISOString(),
+        messages
+      })
+    });
+
+    const data = await response.json();
+    console.log("✅ Sent to backend:", data);
+  } catch (err) {
+    console.error("❌ Backend error:", err);
+  }
 }
+
+/* ================================
+   🎨 FULL TRANSPARENT PANEL
+================================ */
+const panel = document.createElement("div");
+
+Object.assign(panel.style, {
+  position: "fixed",
+  top: "100px",
+  left: "100px",
+  width: "360px",
+  height: "480px",
+  background: "transparent", // ✅ fully transparent
+  color: "#fff",
+  zIndex: "999999",
+  borderRadius: "12px",
+  fontSize: "12px",
+  display: "flex",
+  flexDirection: "column",
+  overflow: "hidden",
+  resize: "both",
+  minWidth: "250px",
+  minHeight: "200px"
+});
+
+/* HEADER (visible for drag) */
+const header = document.createElement("div");
+header.innerText = `🤖 ${PLATFORM} Tracker`;
+
+Object.assign(header.style, {
+  padding: "10px",
+  background: "rgba(0,0,0,0.6)", // visible
+  cursor: "move",
+  userSelect: "none",
+  fontWeight: "bold"
+});
+
+panel.appendChild(header);
+
+/* CONTENT */
+const content = document.createElement("div");
+
+Object.assign(content.style, {
+  flex: "1",
+  padding: "10px",
+  overflowY: "auto",
+  scrollbarWidth: "none",
+  msOverflowStyle: "none"
+});
+
+content.style.scrollBehavior = "smooth";
+
+panel.appendChild(content);
+document.body.appendChild(panel);
+
+/* HIDE SCROLLBAR */
+const style = document.createElement("style");
+style.innerHTML = `
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+`;
+document.head.appendChild(style);
+
+content.classList.add("no-scrollbar");
+
+/* DRAG */
+let isDragging = false;
+let startX, startY, startLeft, startTop;
+
+header.addEventListener("mousedown", (e) => {
+  isDragging = true;
+  startX = e.clientX;
+  startY = e.clientY;
+  startLeft = panel.offsetLeft;
+  startTop = panel.offsetTop;
+  document.body.style.userSelect = "none";
+});
+
+document.addEventListener("mousemove", (e) => {
+  if (!isDragging) return;
+
+  const dx = e.clientX - startX;
+  const dy = e.clientY - startY;
+
+  panel.style.left = startLeft + dx + "px";
+  panel.style.top = startTop + dy + "px";
+});
+
+document.addEventListener("mouseup", () => {
+  isDragging = false;
+  document.body.style.userSelect = "auto";
+});
+
+/* ================================
+   🎨 RENDER UI
+================================ */
+function renderUI(messages) {
+  content.innerHTML = `<hr/>`;
+
+  messages.forEach(msg => {
+    const div = document.createElement("div");
+
+    Object.assign(div.style, {
+      margin: "8px 0",
+      padding: "8px",
+      borderRadius: "8px",
+      background: msg.role === "user"
+        ? "rgba(37,99,235,0.7)"
+        : "rgba(0,0,0,0.5)"
+    });
+
+    div.innerHTML = `
+      <b>${msg.role.toUpperCase()}</b><br/>
+      ${msg.text}
+    `;
+
+    content.appendChild(div);
+
+    msg.code.forEach(c => {
+      const codeBox = document.createElement("pre");
+
+      Object.assign(codeBox.style, {
+        background: "rgba(0,0,0,0.8)",
+        color: "#0f0",
+        padding: "8px",
+        marginTop: "5px",
+        borderRadius: "6px",
+        overflowX: "auto"
+      });
+
+      codeBox.innerText = c;
+      content.appendChild(codeBox);
+    });
+  });
+}
+
+/* ================================
+   🔁 OBSERVER
+================================ */
+let debounceTimer = null;
+let lastHash = "";
 
 const observer = new MutationObserver(() => {
   clearTimeout(debounceTimer);
 
   debounceTimer = setTimeout(() => {
-
-    // ❌ wait until AI finishes
-    if (isGenerating()) {
-      return;
-    }
+    if (isGenerating()) return;
 
     const messages = extractMessages();
     const newHash = generateHash(messages);
 
-    // ❌ prevent duplicate render
     if (newHash === lastHash) return;
-
     lastHash = newHash;
 
-    console.log("✅ FINAL STABLE DATA:", messages);
+    console.clear();
+    console.log(`📊 ${PLATFORM} Messages:\n`, messages);
 
-    updateUI(messages);
+    renderUI(messages);
 
-  }, 800); // debounce time (IMPORTANT)
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage) {
+      sendToBackend([lastMessage]);
+    }
+
+  }, isClaude ? 1000 : 800);
 });
 
 observer.observe(document.body, {
   childList: true,
-  subtree: true,
+  subtree: true
 });
