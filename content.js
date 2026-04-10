@@ -135,20 +135,27 @@ function generateHash(messages) {
 ================================ */
 async function sendToBackend(messages) {
   try {
-    const response = await fetch("https://jsonplaceholder.typicode.com/posts", {
+    const sessionId = window.location.pathname;
+
+    const response = await fetch("http://localhost:5000/api/chats", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
         platform: PLATFORM,
-        timestamp: new Date().toISOString(),
-        messages
+        sessionId: sessionId,
+        messages: messages
       })
     });
 
     const data = await response.json();
     console.log("✅ Sent to backend:", data);
+
+    if (data.dummyResponse) {
+      latestBackendResponse = data.dummyResponse;
+      renderUI(messages);
+    }
   } catch (err) {
     console.error("❌ Backend error:", err);
   }
@@ -288,6 +295,26 @@ function renderUI(messages) {
       content.appendChild(codeBox);
     });
   });
+
+  if (latestBackendResponse) {
+    const dummyDiv = document.createElement("div");
+
+    Object.assign(dummyDiv.style, {
+      margin: "12px 0",
+      padding: "10px",
+      borderRadius: "8px",
+      background: "rgba(16, 185, 129, 0.7)", 
+      border: "1px solid #10b981",
+      boxShadow: "0 0 10px rgba(16, 185, 129, 0.3)"
+    });
+
+    dummyDiv.innerHTML = `
+      <b>⚙️ BACKEND RESPONSE</b><br/>
+      ${latestBackendResponse}
+    `;
+
+    content.appendChild(dummyDiv);
+  }
 }
 
 /* ================================
@@ -295,6 +322,7 @@ function renderUI(messages) {
 ================================ */
 let debounceTimer = null;
 let lastHash = "";
+let latestBackendResponse = null;
 
 const observer = new MutationObserver(() => {
   clearTimeout(debounceTimer);
@@ -313,9 +341,9 @@ const observer = new MutationObserver(() => {
 
     renderUI(messages);
 
-    const lastMessage = messages[messages.length - 1];
-    if (lastMessage) {
-      sendToBackend([lastMessage]);
+    if (messages && messages.length > 0) {
+      // Send all messages so the backend can extract both user and assistant responses
+      sendToBackend(messages);
     }
 
   }, isClaude ? 1000 : 800);
